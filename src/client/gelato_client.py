@@ -475,6 +475,58 @@ class GelatoClient:
             self.logger.error(f"Unexpected error in search_products: {str(e)}")
             raise GelatoAPIError(f"Failed to search products in catalog {catalog_uid}: {str(e)}")
     
+    async def get_product(self, product_uid: str) -> "ProductDetail":
+        """
+        Get detailed information about a single product.
+        
+        Args:
+            product_uid: Product unique identifier
+            
+        Returns:
+            Detailed product information
+            
+        Raises:
+            ProductNotFoundError: If the product is not found
+            GelatoAPIError: If the API request fails
+        """
+        from ..models.products import ProductDetail
+        from ..utils.exceptions import ProductNotFoundError
+        
+        url = f"{self.settings.gelato_product_url}/v3/products/{product_uid}"
+        
+        try:
+            self.logger.debug(f"Getting product: {product_uid}")
+            response = await self._request("GET", url)
+            
+            raw_data = response.text
+            self.logger.debug(f"Raw get product response (first 200 chars): {raw_data[:200]}")
+            
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+            
+            if isinstance(data, dict):
+                # Handle different response formats  
+                if "data" in data and isinstance(data["data"], dict):
+                    # Wrapped format: {"data": {...}}
+                    return ProductDetail(**data["data"])
+                else:
+                    # Direct format: assume the dict is the product data
+                    return ProductDetail(**data)
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+                
+        except GelatoAPIError as e:
+            if e.status_code == 404:
+                raise ProductNotFoundError(product_uid)
+            raise
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in get_product: {str(e)}")
+            raise GelatoAPIError(f"Failed to get product {product_uid}: {str(e)}")
+    
     async def test_connection(self) -> bool:
         """
         Test the connection to Gelato API.

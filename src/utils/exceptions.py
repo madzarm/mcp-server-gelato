@@ -40,6 +40,14 @@ class CatalogNotFoundError(GelatoAPIError):
         super().__init__(message, status_code=404)
 
 
+class ProductNotFoundError(GelatoAPIError):
+    """Raised when a product is not found."""
+    
+    def __init__(self, product_uid: str):
+        message = f"Product with UID '{product_uid}' not found"
+        super().__init__(message, status_code=404)
+
+
 class ValidationError(GelatoAPIError):
     """Raised when request data validation fails."""
     

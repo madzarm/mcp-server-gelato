@@ -113,3 +113,17 @@ class SearchProductsResponse(BaseModel):
     
     products: List[Product] = Field(..., description="List of matching products")
     hits: FilterHits = Field(..., description="Attribute hits for filtering")
+
+
+class ProductDetail(BaseModel):
+    """Detailed product information from single product endpoint."""
+    
+    productUid: str = Field(..., description="Product unique identifier")
+    attributes: Dict[str, str] = Field(..., description="Associative array of product attributes")
+    weight: Any = Field(..., description="Weight of the product")
+    supportedCountries: List[str] = Field(..., description="Array of supported country codes (ISO 3166-1)")
+    notSupportedCountries: List[str] = Field(..., description="Array of countries that are not supported")
+    isStockable: bool = Field(..., description="Whether the product is a stockable item")
+    isPrintable: bool = Field(..., description="Whether the product is a printable item")
+    validPageCounts: Optional[List[int]] = Field(None, description="Supported page counts for multi-page products")
+    dimensions: Optional[Any] = Field(None, description="Product dimensions (flexible structure)")
