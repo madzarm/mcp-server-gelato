@@ -7,7 +7,8 @@ from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
 
 from ..client.gelato_client import GelatoClient
-from ..models.orders import SearchOrdersParams
+from ..models.orders import CreateOrderRequest, CreateOrderItem, CreateOrderFile, MetadataObject, SearchOrdersParams
+from ..models.common import ShippingAddress, ReturnAddress
 from ..utils.exceptions import GelatoAPIError
 
 
@@ -178,5 +179,177 @@ def register_order_tools(mcp: FastMCP):
                     "order_id": order_id,
                     "status_code": getattr(e, 'status_code', None),
                     "response_data": getattr(e, 'response_data', {})
+                }
+            }
+    
+    @mcp.tool()
+    async def create_order(
+        ctx: Context,
+        order_reference_id: str,
+        customer_reference_id: str,
+        currency: str,
+        items: List[Dict[str, Any]],
+        shipping_address: Dict[str, Any],
+        order_type: Optional[Literal["order", "draft"]] = "order",
+        shipment_method_uid: Optional[str] = None,
+        return_address: Optional[Dict[str, Any]] = None,
+        metadata: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new Gelato order.
+        
+        This tool creates either a production order or a draft order using the Gelato API.
+        
+        Args:
+            ctx: MCP context for logging and client access
+            order_reference_id: Your internal order ID (must be unique)
+            customer_reference_id: Your internal customer ID
+            currency: Currency ISO code (e.g., "USD", "EUR", "GBP")
+            items: List of order items, each containing:
+                - itemReferenceId (str): Your internal item ID (unique within order)
+                - productUid (str): Product UID (e.g., "apparel_product_gca_t-shirt...")
+                - quantity (int): Number of items to produce
+                - files (list, optional): Print files with type and URL
+                - pageCount (int, optional): For multipage products
+            shipping_address: Shipping address dictionary containing:
+                - firstName (str): Recipient first name (max 25 chars)
+                - lastName (str): Recipient last name (max 25 chars)  
+                - addressLine1 (str): First address line (max 35 chars)
+                - city (str): City name (max 30 chars)
+                - postCode (str): Postal code (max 15 chars)
+                - country (str): 2-character ISO country code (e.g., "US", "GB")
+                - email (str): Email address
+                - addressLine2 (str, optional): Second address line
+                - companyName (str, optional): Company name (max 60 chars)
+                - state (str, optional): State code (required for US, CA, AU)
+                - phone (str, optional): Phone number in E.123 format
+                - isBusiness (bool, optional): Whether recipient is business
+                - federalTaxId (str, optional): Federal tax ID (required for Brazil)
+                - stateTaxId (str, optional): State tax ID (required for Brazilian companies)
+                - registrationStateCode (str, optional): Registration state code
+            order_type: "order" for production orders, "draft" for draft orders
+            shipment_method_uid: Shipping method ("normal", "standard", "express", or specific UID)
+            return_address: Optional return address (same format as shipping_address)
+            metadata: Optional key-value pairs for additional order information (max 20)
+        
+        Returns:
+            Dict containing the created order details or error information
+            
+        Examples:
+            Simple t-shirt order:
+            create_order(
+                order_reference_id="order-123",
+                customer_reference_id="customer-456", 
+                currency="USD",
+                items=[{
+                    "itemReferenceId": "item-1",
+                    "productUid": "apparel_product_gca_t-shirt_gsc_crewneck_gcu_unisex_gqa_classic_gsi_s_gco_white_gpr_4-4",
+                    "quantity": 1,
+                    "files": [{"type": "default", "url": "https://example.com/design.png"}]
+                }],
+                shipping_address={
+                    "firstName": "John",
+                    "lastName": "Doe", 
+                    "addressLine1": "123 Main St",
+                    "city": "New York",
+                    "postCode": "10001",
+                    "country": "US",
+                    "state": "NY",
+                    "email": "john@example.com"
+                }
+            )
+        """
+        client: GelatoClient = ctx.request_context.lifespan_context["client"]
+        
+        try:
+            # Log the operation start
+            await ctx.info(f"Creating order: {order_reference_id} for customer: {customer_reference_id}")
+            
+            # Parse and validate items
+            order_items = []
+            for item_data in items:
+                files = None
+                if "files" in item_data and item_data["files"]:
+                    files = [CreateOrderFile(**file_data) for file_data in item_data["files"]]
+                
+                order_item = CreateOrderItem(
+                    itemReferenceId=item_data["itemReferenceId"],
+                    productUid=item_data["productUid"],
+                    quantity=item_data["quantity"],
+                    files=files,
+                    pageCount=item_data.get("pageCount"),
+                    adjustProductUidByFileTypes=item_data.get("adjustProductUidByFileTypes")
+                )
+                order_items.append(order_item)
+            
+            # Parse shipping address
+            shipping_addr = ShippingAddress(**shipping_address)
+            
+            # Parse optional return address
+            return_addr = None
+            if return_address:
+                return_addr = ReturnAddress(**return_address)
+            
+            # Parse optional metadata
+            metadata_objects = None
+            if metadata:
+                metadata_objects = [MetadataObject(**item) for item in metadata]
+            
+            # Create the order request
+            order_request = CreateOrderRequest(
+                orderType=order_type,
+                orderReferenceId=order_reference_id,
+                customerReferenceId=customer_reference_id,
+                currency=currency,
+                items=order_items,
+                shippingAddress=shipping_addr,
+                shipmentMethodUid=shipment_method_uid,
+                returnAddress=return_addr,
+                metadata=metadata_objects
+            )
+            
+            # Create the order via API
+            await ctx.info("Sending order creation request to Gelato API...")
+            result = await client.create_order(order_request)
+            
+            await ctx.info(f"Order created successfully with ID: {result.id}")
+            
+            return {
+                "success": True,
+                "data": result.model_dump(),
+                "message": f"Order {result.id} created successfully",
+                "order_id": result.id,
+                "order_reference_id": order_reference_id,
+                "fulfillment_status": result.fulfillmentStatus,
+                "financial_status": result.financialStatus
+            }
+        
+        except GelatoAPIError as e:
+            error_message = f"Failed to create order: {str(e)}"
+            await ctx.error(error_message)
+            
+            return {
+                "success": False,
+                "error": {
+                    "message": str(e),
+                    "operation": "create_order",
+                    "order_reference_id": order_reference_id,
+                    "customer_reference_id": customer_reference_id,
+                    "status_code": getattr(e, 'status_code', None),
+                    "response_data": getattr(e, 'response_data', {})
+                }
+            }
+        
+        except Exception as e:
+            error_message = f"Unexpected error creating order: {str(e)}"
+            await ctx.error(error_message)
+            
+            return {
+                "success": False,
+                "error": {
+                    "message": error_message,
+                    "operation": "create_order",
+                    "order_reference_id": order_reference_id,
+                    "customer_reference_id": customer_reference_id
                 }
             }

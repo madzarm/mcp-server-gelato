@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.client.gelato_client import GelatoClient
-from src.models.orders import SearchOrdersParams
+from src.models.orders import CreateOrderRequest, SearchOrdersParams
 from src.utils.exceptions import (
     AuthenticationError,
     CatalogNotFoundError,
@@ -366,3 +366,157 @@ class TestClientErrorHandling:
         
         # Verify session was closed
         client.session.aclose.assert_called_once()
+
+
+class TestCreateOrder:
+    """Test cases for create_order method."""
+    
+    async def test_create_order_success(self, mock_gelato_client, mock_response, sample_order_detail):
+        """Test successful order creation."""
+        # Mock response
+        response_data = sample_order_detail.model_dump()
+        mock_gelato_client.session.request = AsyncMock(
+            return_value=mock_response(response_data)
+        )
+        
+        # Create order request
+        order_request = CreateOrderRequest(
+            orderReferenceId="test-order-123",
+            customerReferenceId="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1,
+                    "files": [{"type": "default", "url": "https://example.com/design.png"}]
+                }
+            ],
+            shippingAddress={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "state": "NY",
+                "email": "john@example.com"
+            }
+        )
+        
+        # Call method
+        result = await mock_gelato_client.create_order(order_request)
+        
+        # Verify result
+        assert result.id == sample_order_detail.id
+        assert result.orderReferenceId == sample_order_detail.orderReferenceId
+        
+        # Verify API call
+        mock_gelato_client.session.request.assert_called_once()
+        call_args = mock_gelato_client.session.request.call_args
+        assert call_args[0][0] == "POST"  # HTTP method
+        assert "/v4/orders" in call_args[0][1]  # URL contains correct path
+        assert "json" in call_args[1]  # JSON payload provided
+    
+    async def test_create_order_wrapped_response(self, mock_gelato_client, mock_response, sample_order_detail):
+        """Test create_order with wrapped response format."""
+        # Mock wrapped response
+        wrapped_response = {
+            "data": sample_order_detail.model_dump(),
+            "pagination": {}
+        }
+        mock_gelato_client.session.request = AsyncMock(
+            return_value=mock_response(wrapped_response)
+        )
+        
+        order_request = CreateOrderRequest(
+            orderReferenceId="test-order-123",
+            customerReferenceId="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1
+                }
+            ],
+            shippingAddress={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        )
+        
+        result = await mock_gelato_client.create_order(order_request)
+        
+        assert result.id == sample_order_detail.id
+        assert result.orderReferenceId == sample_order_detail.orderReferenceId
+    
+    async def test_create_order_api_error(self, mock_gelato_client):
+        """Test create_order with API error."""
+        # Mock API error
+        mock_gelato_client.session.request = AsyncMock(
+            side_effect=GelatoAPIError("API Error", status_code=400)
+        )
+        
+        order_request = CreateOrderRequest(
+            orderReferenceId="test-order-123",
+            customerReferenceId="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1
+                }
+            ],
+            shippingAddress={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        )
+        
+        with pytest.raises(GelatoAPIError):
+            await mock_gelato_client.create_order(order_request)
+    
+    async def test_create_order_validation_error(self, mock_gelato_client, mock_response):
+        """Test create_order with invalid response format."""
+        # Mock invalid response (non-dict)
+        response_data = "invalid response"
+        mock_gelato_client.session.request = AsyncMock(
+            return_value=mock_response(response_data)
+        )
+        
+        order_request = CreateOrderRequest(
+            orderReferenceId="test-order-123",
+            customerReferenceId="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1
+                }
+            ],
+            shippingAddress={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        )
+        
+        with pytest.raises(GelatoValidationError):
+            await mock_gelato_client.create_order(order_request)

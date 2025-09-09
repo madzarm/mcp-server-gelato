@@ -11,11 +11,7 @@ def main():
     # Set up logging (goes to stderr, not stdout)
     debug = os.getenv("DEBUG", "false").lower() == "true"
     logger = setup_logging(level="DEBUG" if debug else "INFO", debug=debug)
-    
-    logger.info("🚀 Starting Gelato MCP Server...")
-    logger.info("📦 Gelato print-on-demand API integration")
-    logger.info("🔧 Make sure to set your GELATO_API_KEY environment variable")
-    
+
     try:
         run_server()
     except Exception as e:

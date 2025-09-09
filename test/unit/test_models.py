@@ -7,7 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 from src.models.common import Address, ShippingAddress, File
-from src.models.orders import OrderDetail, OrderSummary, SearchOrdersParams, SearchOrdersResponse
+from src.models.orders import (
+    CreateOrderFile, CreateOrderItem, CreateOrderRequest, MetadataObject,
+    OrderDetail, OrderSummary, SearchOrdersParams, SearchOrdersResponse
+)
 from src.models.products import Catalog, CatalogDetail, ProductAttribute, ProductAttributeValue
 
 
@@ -457,3 +460,183 @@ class TestModelValidation:
         
         assert file_obj.type == "front"
         assert isinstance(file_obj, File)
+    
+    def test_metadata_object_creation(self):
+        """Test MetadataObject model creation."""
+        metadata_data = {
+            "key": "customer_notes",
+            "value": "Rush order - please expedite"
+        }
+        
+        metadata = MetadataObject(**metadata_data)
+        
+        assert metadata.key == "customer_notes"
+        assert metadata.value == "Rush order - please expedite"
+    
+    def test_metadata_object_validation(self):
+        """Test MetadataObject model validation."""
+        # Test key length validation
+        with pytest.raises(ValidationError):
+            MetadataObject(key="a" * 101, value="test")  # Key too long (max 100)
+        
+        # Test value length validation
+        with pytest.raises(ValidationError):
+            MetadataObject(key="test", value="b" * 101)  # Value too long (max 100)
+        
+        # Test valid lengths
+        metadata = MetadataObject(key="a" * 100, value="b" * 100)
+        assert len(metadata.key) == 100
+        assert len(metadata.value) == 100
+    
+    def test_create_order_file_creation(self):
+        """Test CreateOrderFile model creation."""
+        file_data = {
+            "type": "default",
+            "url": "https://example.com/design.png"
+        }
+        
+        file_obj = CreateOrderFile(**file_data)
+        
+        assert file_obj.type == "default"
+        assert file_obj.url == "https://example.com/design.png"
+        assert file_obj.id is None
+        assert file_obj.threadColors is None
+        assert file_obj.isVisible is None
+    
+    def test_create_order_file_embroidery(self):
+        """Test CreateOrderFile model with embroidery options."""
+        file_data = {
+            "id": "emb-file-123",
+            "type": "chest-left-embroidery",
+            "threadColors": ["#FF0000", "#00FF00", "#0000FF"],
+            "isVisible": True
+        }
+        
+        file_obj = CreateOrderFile(**file_data)
+        
+        assert file_obj.id == "emb-file-123"
+        assert file_obj.type == "chest-left-embroidery"
+        assert file_obj.threadColors == ["#FF0000", "#00FF00", "#0000FF"]
+        assert file_obj.isVisible is True
+        assert file_obj.url is None  # Optional when ID is provided
+    
+    def test_create_order_item_creation(self):
+        """Test CreateOrderItem model creation."""
+        item_data = {
+            "itemReferenceId": "item-123",
+            "productUid": "apparel_product_gca_t-shirt_gsc_crewneck_gcu_unisex_gqa_classic_gsi_s_gco_white_gpr_4-4",
+            "quantity": 2,
+            "files": [
+                {"type": "default", "url": "https://example.com/front.png"},
+                {"type": "back", "url": "https://example.com/back.png"}
+            ],
+            "pageCount": 1
+        }
+        
+        item = CreateOrderItem(**item_data)
+        
+        assert item.itemReferenceId == "item-123"
+        assert item.productUid.startswith("apparel_product_")
+        assert item.quantity == 2
+        assert len(item.files) == 2
+        assert item.files[0].type == "default"
+        assert item.files[1].type == "back"
+        assert item.pageCount == 1
+        assert item.adjustProductUidByFileTypes is None
+    
+    def test_create_order_item_validation(self):
+        """Test CreateOrderItem model validation."""
+        # Test quantity validation (minimum 1)
+        with pytest.raises(ValidationError):
+            CreateOrderItem(
+                itemReferenceId="item-123",
+                productUid="test-product",
+                quantity=0  # Invalid - should be >= 1
+            )
+        
+        # Valid minimum quantity
+        item = CreateOrderItem(
+            itemReferenceId="item-123",
+            productUid="test-product",
+            quantity=1
+        )
+        assert item.quantity == 1
+    
+    def test_create_order_request_creation(self):
+        """Test CreateOrderRequest model creation."""
+        request_data = {
+            "orderReferenceId": "order-123",
+            "customerReferenceId": "customer-456",
+            "currency": "USD",
+            "items": [
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1,
+                    "files": [{"type": "default", "url": "https://example.com/design.png"}]
+                }
+            ],
+            "shippingAddress": {
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "state": "NY",
+                "email": "john@example.com"
+            },
+            "orderType": "order",
+            "shipmentMethodUid": "express",
+            "metadata": [
+                {"key": "priority", "value": "high"},
+                {"key": "source", "value": "api"}
+            ]
+        }
+        
+        request = CreateOrderRequest(**request_data)
+        
+        assert request.orderReferenceId == "order-123"
+        assert request.customerReferenceId == "customer-456"
+        assert request.currency == "USD"
+        assert request.orderType == "order"
+        assert request.shipmentMethodUid == "express"
+        assert len(request.items) == 1
+        assert len(request.metadata) == 2
+        assert request.items[0].itemReferenceId == "item-1"
+        assert request.metadata[0].key == "priority"
+        assert request.shippingAddress.firstName == "John"
+        assert request.returnAddress is None
+    
+    def test_create_order_request_defaults(self):
+        """Test CreateOrderRequest model with default values."""
+        minimal_data = {
+            "orderReferenceId": "order-123",
+            "customerReferenceId": "customer-456",
+            "currency": "USD",
+            "items": [
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1
+                }
+            ],
+            "shippingAddress": {
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        }
+        
+        request = CreateOrderRequest(**minimal_data)
+        
+        assert request.orderType == "order"  # Default value
+        assert request.shipmentMethodUid is None
+        assert request.returnAddress is None
+        assert request.metadata is None
+        assert len(request.items) == 1
+        assert request.items[0].files is None

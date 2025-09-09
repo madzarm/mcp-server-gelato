@@ -8,7 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from ..config import Settings
-from ..models.orders import OrderDetail, SearchOrdersParams, SearchOrdersResponse
+from ..models.orders import CreateOrderRequest, OrderDetail, SearchOrdersParams, SearchOrdersResponse
 from ..models.products import Catalog, CatalogDetail
 from ..utils.auth import get_auth_headers, validate_api_key
 from ..utils.exceptions import (
@@ -234,6 +234,57 @@ class GelatoClient:
         except Exception as e:
             self.logger.error(f"Unexpected error in get_order: {str(e)}")
             raise GelatoAPIError(f"Failed to get order {order_id}: {str(e)}")
+    
+    async def create_order(self, request: CreateOrderRequest) -> OrderDetail:
+        """
+        Create a new order.
+        
+        Args:
+            request: Order creation request with all required details
+            
+        Returns:
+            Detailed order information for the created order
+            
+        Raises:
+            GelatoValidationError: If the request data is invalid
+            GelatoAPIError: If the API request fails
+        """
+        url = f"{self.settings.gelato_base_url}/v4/orders"
+        
+        try:
+            # Convert request to dict and exclude None values for cleaner request
+            payload = request.model_dump(exclude_none=True)
+            
+            self.logger.debug(f"Creating order with payload: {json.dumps(payload, indent=2, default=str)}")
+            
+            response = await self._request("POST", url, json=payload)
+            raw_data = response.text
+            self.logger.debug(f"Raw create order response (first 200 chars): {raw_data[:200]}")
+            
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+            
+            if isinstance(data, dict):
+                # Handle different response formats
+                if "data" in data and isinstance(data["data"], dict):
+                    # Wrapped format: {"data": {...}, "pagination": {...}}
+                    return OrderDetail(**data["data"])
+                else:
+                    # Direct format: assume the dict is the order data
+                    return OrderDetail(**data)
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+                
+        except GelatoAPIError:
+            # Re-raise API errors without modification
+            raise
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in create_order: {str(e)}")
+            raise GelatoAPIError(f"Failed to create order: {str(e)}")
     
     # Product API methods
     

@@ -334,3 +334,230 @@ class TestToolParameterHandling:
         assert params["order_types"] == ["order"]
         assert params["limit"] == 25
         assert params["search_text"] == "test search"
+
+
+class TestCreateOrderTool:
+    """Test cases for create_order tool function."""
+    
+    def setup_method(self):
+        """Set up each test."""
+        # Create a mock context with client access
+        self.mock_context = MagicMock()
+        self.mock_client = AsyncMock()
+        self.mock_context.request_context.lifespan_context = {"client": self.mock_client}
+        
+        # Make context methods async
+        self.mock_context.info = AsyncMock()
+        self.mock_context.error = AsyncMock()
+    
+    async def test_create_order_basic(self, sample_order_detail):
+        """Test create_order tool with basic parameters."""
+        # Set up mock client response
+        self.mock_client.create_order.return_value = sample_order_detail
+        
+        # Get the tool function
+        mock_mcp = MockFastMCP()
+        register_order_tools(mock_mcp)
+        create_order_func = mock_mcp.tools["create_order"]
+        
+        # Call the function
+        result = await create_order_func(
+            self.mock_context,
+            order_reference_id="test-order-123",
+            customer_reference_id="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 1,
+                    "files": [{"type": "default", "url": "https://example.com/design.png"}]
+                }
+            ],
+            shipping_address={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "state": "NY",
+                "email": "john@example.com"
+            }
+        )
+        
+        # Verify the result
+        assert isinstance(result, dict)
+        assert result["success"] is True
+        assert "data" in result
+        assert result["order_id"] == sample_order_detail.id
+        assert result["order_reference_id"] == "test-order-123"
+        
+        # Verify client was called
+        self.mock_client.create_order.assert_called_once()
+        
+        # Verify context logging was called
+        self.mock_context.info.assert_called()
+    
+    async def test_create_order_with_all_options(self, sample_order_detail):
+        """Test create_order tool with all optional parameters."""
+        # Set up mock client response
+        self.mock_client.create_order.return_value = sample_order_detail
+        
+        # Get the tool function
+        mock_mcp = MockFastMCP()
+        register_order_tools(mock_mcp)
+        create_order_func = mock_mcp.tools["create_order"]
+        
+        # Call the function with all options
+        result = await create_order_func(
+            self.mock_context,
+            order_reference_id="test-order-123",
+            customer_reference_id="test-customer-456",
+            currency="EUR",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "apparel_product_gca_t-shirt_gsc_crewneck_gcu_unisex_gqa_classic_gsi_s_gco_white_gpr_4-4",
+                    "quantity": 2,
+                    "files": [
+                        {"type": "default", "url": "https://example.com/front.png"},
+                        {"type": "back", "url": "https://example.com/back.png"}
+                    ],
+                    "pageCount": 1
+                }
+            ],
+            shipping_address={
+                "firstName": "Jane",
+                "lastName": "Smith",
+                "companyName": "ACME Corp",
+                "addressLine1": "456 Business Ave",
+                "addressLine2": "Suite 200",
+                "city": "Los Angeles",
+                "postCode": "90210",
+                "country": "US",
+                "state": "CA",
+                "email": "jane@acme.com",
+                "phone": "+1-555-123-4567"
+            },
+            order_type="draft",
+            shipment_method_uid="express",
+            return_address={
+                "companyName": "ACME Returns",
+                "addressLine1": "789 Return St",
+                "city": "Los Angeles",
+                "postCode": "90211",
+                "country": "US",
+                "email": "returns@acme.com"
+            },
+            metadata=[
+                {"key": "priority", "value": "high"},
+                {"key": "source", "value": "api_test"}
+            ]
+        )
+        
+        # Verify the result
+        assert result["success"] is True
+        assert result["order_id"] == sample_order_detail.id
+        
+        # Verify client was called with a CreateOrderRequest
+        self.mock_client.create_order.assert_called_once()
+        call_args = self.mock_client.create_order.call_args[0][0]
+        assert call_args.orderType == "draft"
+        assert call_args.shipmentMethodUid == "express"
+        assert len(call_args.metadata) == 2
+        assert call_args.returnAddress is not None
+    
+    async def test_create_order_api_error(self):
+        """Test create_order tool with API error."""
+        # Set up mock client to raise error
+        self.mock_client.create_order.side_effect = GelatoAPIError(
+            "Invalid product UID", 
+            status_code=400,
+            response_data={"error": "Product not found"}
+        )
+        
+        # Get the tool function
+        mock_mcp = MockFastMCP()
+        register_order_tools(mock_mcp)
+        create_order_func = mock_mcp.tools["create_order"]
+        
+        # Call the function
+        result = await create_order_func(
+            self.mock_context,
+            order_reference_id="test-order-123",
+            customer_reference_id="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "invalid-product-uid",
+                    "quantity": 1
+                }
+            ],
+            shipping_address={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        )
+        
+        # Verify error response
+        assert result["success"] is False
+        assert "error" in result
+        assert result["error"]["message"] == "Invalid product UID"
+        assert result["error"]["status_code"] == 400
+        assert result["error"]["order_reference_id"] == "test-order-123"
+        
+        # Verify error logging was called
+        self.mock_context.error.assert_called()
+    
+    async def test_create_order_validation_error(self):
+        """Test create_order tool with validation error."""
+        # Get the tool function
+        mock_mcp = MockFastMCP()
+        register_order_tools(mock_mcp)
+        create_order_func = mock_mcp.tools["create_order"]
+        
+        # Call the function with invalid data (missing required fields)
+        result = await create_order_func(
+            self.mock_context,
+            order_reference_id="test-order-123",
+            customer_reference_id="test-customer-456",
+            currency="USD",
+            items=[
+                {
+                    "itemReferenceId": "item-1",
+                    "productUid": "test-product-uid",
+                    "quantity": 0  # Invalid quantity
+                }
+            ],
+            shipping_address={
+                "firstName": "John",
+                "lastName": "Doe",
+                "addressLine1": "123 Main St",
+                "city": "New York",
+                "postCode": "10001",
+                "country": "US",
+                "email": "john@example.com"
+            }
+        )
+        
+        # Verify error response
+        assert result["success"] is False
+        assert "error" in result
+        assert "validation" in result["error"]["message"].lower()
+    
+    async def test_create_order_tool_registration(self):
+        """Test that create_order tool is registered correctly."""
+        mock_mcp = MockFastMCP()
+        
+        register_order_tools(mock_mcp)
+        
+        # Check that create_order tool is registered
+        assert "create_order" in mock_mcp.tools
+        assert callable(mock_mcp.tools["create_order"])

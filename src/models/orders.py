@@ -98,3 +98,47 @@ class SearchOrdersResponse(BaseModel):
     """Response from order search API."""
     
     orders: List[OrderSummary] = Field(..., description="List of orders matching search criteria")
+
+
+# Order Creation Models
+
+class MetadataObject(BaseModel):
+    """Metadata object for storing additional structured information on orders."""
+    
+    key: str = Field(..., description="Reference value to identify the metadata entry", max_length=100)
+    value: str = Field(..., description="Value assigned to the metadata entry", max_length=100)
+
+
+class CreateOrderFile(BaseModel):
+    """File specification for order creation."""
+    
+    id: Optional[str] = Field(None, description="File ID for reusing existing embroidery files")
+    type: Optional[str] = Field("default", description="File type/print area")
+    url: Optional[str] = Field(None, description="URL from where the file can be downloaded")
+    threadColors: Optional[List[str]] = Field(None, description="Hex color codes for embroidery (max 6 colors)")
+    isVisible: Optional[bool] = Field(None, description="Whether file should appear in dashboard (embroidery only)")
+
+
+class CreateOrderItem(BaseModel):
+    """Item specification for order creation."""
+    
+    itemReferenceId: str = Field(..., description="Your internal order item ID (must be unique within order)")
+    productUid: str = Field(..., description="Type of printing product in product uid format")
+    pageCount: Optional[int] = Field(None, description="Page count for multipage products")
+    files: Optional[List[CreateOrderFile]] = Field(None, description="Files for generating product file")
+    quantity: int = Field(..., description="Product quantity (minimum 1)", ge=1)
+    adjustProductUidByFileTypes: Optional[bool] = Field(None, description="Auto-adjust productUid based on file types")
+
+
+class CreateOrderRequest(BaseModel):
+    """Request model for creating a new order."""
+    
+    orderType: Optional[Literal["order", "draft"]] = Field("order", description="Type of order (order or draft)")
+    orderReferenceId: str = Field(..., description="Your internal order ID")
+    customerReferenceId: str = Field(..., description="Your internal customer ID")
+    currency: str = Field(..., description="Currency ISO code (ISO 4217)")
+    items: List[CreateOrderItem] = Field(..., description="List of line items")
+    metadata: Optional[List[MetadataObject]] = Field(None, description="Additional structured information (max 20 entries)")
+    shippingAddress: ShippingAddress = Field(..., description="Shipping address information")
+    shipmentMethodUid: Optional[str] = Field(None, description="Preferred shipping method (normal, standard, express, or specific UID)")
+    returnAddress: Optional[ReturnAddress] = Field(None, description="Return address information")
