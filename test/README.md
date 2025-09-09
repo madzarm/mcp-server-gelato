@@ -117,7 +117,6 @@ uv run pytest test/ -m "not slow" -v
 - ✅ All resource functions:
   - `list_catalogs` - success and error handling
   - `get_catalog` - success, not found, API errors
-  - `get_catalog_summary` - success and formatting
 - ✅ JSON response formatting and structure
 
 #### Order Tools (`test_tools_orders.py`)

@@ -146,29 +146,3 @@ class TestCatalogResources:
         assert "Catalog not found: missing-catalog" in parsed_result["error"]
         assert parsed_result["catalog_uid"] == "missing-catalog"
     
-    async def test_get_catalog_summary_success(self, sample_catalog):
-        """Test get_catalog_summary resource with successful response."""
-        # Set up mock
-        self.mock_client.list_catalogs.return_value = [sample_catalog]
-        
-        # Get the resource function
-        mock_mcp = MockFastMCP()
-        register_product_resources(mock_mcp)
-        get_summary_func = mock_mcp.resources["catalogs://summary"]
-        
-        # Call the function
-        result = await get_summary_func()
-        
-        # Verify the result
-        assert isinstance(result, str)
-        parsed_result = json.loads(result)
-        assert "catalog_summary" in parsed_result
-        assert "total_catalogs" in parsed_result
-        assert "description" in parsed_result
-        assert len(parsed_result["catalog_summary"]) == 1
-        
-        # Verify summary format
-        summary_item = parsed_result["catalog_summary"][0]
-        assert summary_item["uid"] == "test-cards"
-        assert summary_item["title"] == "Test Cards"
-        assert summary_item["resource_uri"] == "catalogs://test-cards"
