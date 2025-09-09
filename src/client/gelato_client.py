@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ..config import Settings
 from ..models.orders import CreateOrderRequest, OrderDetail, SearchOrdersParams, SearchOrdersResponse
-from ..models.products import Catalog, CatalogDetail
+from ..models.products import Catalog, CatalogDetail, SearchProductsRequest, SearchProductsResponse
 from ..utils.auth import get_auth_headers, validate_api_key
 from ..utils.exceptions import (
     AuthenticationError,
@@ -421,6 +421,59 @@ class GelatoClient:
         except Exception as e:
             self.logger.error(f"Unexpected error in get_catalog: {str(e)}")
             raise GelatoAPIError(f"Failed to get catalog {catalog_uid}: {str(e)}")
+    
+    async def search_products(self, catalog_uid: str, request: SearchProductsRequest) -> SearchProductsResponse:
+        """
+        Search products in a specific catalog with filters.
+        
+        Args:
+            catalog_uid: Catalog unique identifier
+            request: Search request with filters and pagination
+            
+        Returns:
+            Search results containing products and filter hits
+            
+        Raises:
+            CatalogNotFoundError: If the catalog is not found
+            GelatoAPIError: If the API request fails
+        """
+        url = f"{self.settings.gelato_product_url}/v3/catalogs/{catalog_uid}/products:search"
+        
+        try:
+            # Convert request to dict and exclude None values for cleaner request
+            payload = request.model_dump(exclude_none=True)
+            
+            self.logger.debug(f"Searching products in catalog {catalog_uid} with payload: {json.dumps(payload, indent=2, default=str)}")
+            
+            response = await self._request("POST", url, json=payload)
+            raw_data = response.text
+            self.logger.debug(f"Raw search products response (first 200 chars): {raw_data[:200]}")
+            
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+            
+            if isinstance(data, dict):
+                # Handle different response formats
+                if "data" in data and isinstance(data["data"], dict):
+                    # Wrapped format: {"data": {...}, "pagination": {...}}
+                    return SearchProductsResponse(**data["data"])
+                else:
+                    # Direct format: assume the dict is the response data
+                    return SearchProductsResponse(**data)
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+                
+        except GelatoAPIError as e:
+            if e.status_code == 404:
+                raise CatalogNotFoundError(catalog_uid)
+            raise
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in search_products: {str(e)}")
+            raise GelatoAPIError(f"Failed to search products in catalog {catalog_uid}: {str(e)}")
     
     async def test_connection(self) -> bool:
         """

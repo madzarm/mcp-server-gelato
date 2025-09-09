@@ -26,8 +26,8 @@ def register_order_tools(mcp: FastMCP):
         search_text: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        limit: int = Field(default=50, le=100, description="Maximum results per page (max 100)"),
-        offset: int = Field(default=0, ge=0, description="Offset for pagination"),
+        limit: int = 50,
+        offset: int = 0,
         order_reference_ids: Optional[List[str]] = None,
         store_ids: Optional[List[str]] = None,
         channels: Optional[List[str]] = None
@@ -45,7 +45,7 @@ def register_order_tools(mcp: FastMCP):
         - start_date: Show orders created after this date (ISO 8601 format: 2024-01-01T00:00:00Z)
         - end_date: Show orders created before this date (ISO 8601 format: 2024-12-31T23:59:59Z)
         - limit: Maximum number of results (default 50, max 100)
-        - offset: Number of results to skip for pagination
+        - offset: Number of results to skip for pagination (default 0, min 0)
         - order_reference_ids: Filter by your internal order IDs
         - store_ids: Filter by e-commerce store IDs
         - channels: Filter by order channel ("api", "shopify", "etsy", "ui")
@@ -87,6 +87,25 @@ def register_order_tools(mcp: FastMCP):
                             "operation": "search_orders"
                         }
                     }
+            
+            # Validate parameters
+            if limit < 1 or limit > 100:
+                return {
+                    "success": False,
+                    "error": {
+                        "message": f"Invalid limit: {limit}. Must be between 1 and 100.",
+                        "operation": "search_orders"
+                    }
+                }
+            
+            if offset < 0:
+                return {
+                    "success": False,
+                    "error": {
+                        "message": f"Invalid offset: {offset}. Must be 0 or greater.",
+                        "operation": "search_orders"
+                    }
+                }
             
             # Build search parameters
             search_params = SearchOrdersParams(

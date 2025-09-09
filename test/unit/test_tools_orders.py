@@ -65,12 +65,16 @@ class TestSearchOrdersTool:
         
         # Verify the result
         assert isinstance(result, dict)
-        assert "orders" in result
-        assert "count" in result
-        assert "parameters_used" in result
-        assert len(result["orders"]) == 1
-        assert result["orders"][0]["id"] == "test-order-123"
-        assert result["count"] == 1
+        assert result["success"] is True
+        assert "data" in result
+        assert "orders" in result["data"]
+        assert "pagination" in result["data"]
+        assert "search_params" in result["data"]
+        assert len(result["data"]["orders"]) == 1
+        assert result["data"]["orders"][0]["id"] == "test-order-123"
+        assert result["data"]["pagination"]["count"] == 1
+        assert result["data"]["pagination"]["limit"] == 10
+        assert result["data"]["pagination"]["offset"] == 5
         
         # Verify client was called with correct parameters
         call_args = self.mock_client.search_orders.call_args[0][0]
@@ -103,16 +107,16 @@ class TestSearchOrdersTool:
         )
         
         # Verify the result includes filters in parameters
-        assert result["parameters_used"]["order_types"] == ["order"]
-        assert result["parameters_used"]["countries"] == ["US", "CA"]
-        assert result["parameters_used"]["search_text"] == "John Doe"
+        assert result["data"]["search_params"]["orderTypes"] == ["order"]
+        assert result["data"]["search_params"]["countries"] == ["US", "CA"]
+        assert result["data"]["search_params"]["search"] == "John Doe"
         
         # Verify client was called with correct parameters
         call_args = self.mock_client.search_orders.call_args[0][0]
-        assert call_args.order_types == ["order"]
+        assert call_args.orderTypes == ["order"]
         assert call_args.countries == ["US", "CA"]
         assert call_args.currencies == ["USD"]
-        assert call_args.search_text == "John Doe"
+        assert call_args.search == "John Doe"
         assert call_args.limit == 25
     
     async def test_search_orders_empty_result(self):
@@ -132,8 +136,8 @@ class TestSearchOrdersTool:
         result = await search_orders_func(self.mock_context)
         
         # Verify the result
-        assert result["count"] == 0
-        assert len(result["orders"]) == 0
+        assert result["data"]["pagination"]["count"] == 0
+        assert len(result["data"]["orders"]) == 0
         assert "No orders found" in result["message"]
     
     async def test_search_orders_api_error(self):
@@ -154,9 +158,10 @@ class TestSearchOrdersTool:
         
         # Verify error is handled
         assert isinstance(result, dict)
+        assert result["success"] is False
         assert "error" in result
-        assert "Search failed" in str(result["error"])
-        assert result.get("status_code") == 500
+        assert "Search failed" in str(result["error"]["message"])
+        assert result["error"]["status_code"] == 500
     
     async def test_search_orders_parameter_validation(self, sample_search_response):
         """Test search_orders tool parameter validation."""
@@ -202,10 +207,12 @@ class TestGetOrderSummaryTool:
         
         # Verify the result
         assert isinstance(result, dict)
-        assert result["id"] == "test-order-123"
-        assert result["orderType"] == "order"
-        assert result["currency"] == "USD"
-        assert "summary" in result
+        assert result["success"] is True
+        assert "data" in result
+        assert result["data"]["id"] == "test-order-123"
+        assert result["data"]["orderType"] == "order"
+        assert result["data"]["currency"] == "USD"
+        assert "message" in result
         
         # Verify client was called correctly
         self.mock_client.get_order.assert_called_once_with("test-order-123")
@@ -225,9 +232,10 @@ class TestGetOrderSummaryTool:
         
         # Verify error is handled
         assert isinstance(result, dict)
+        assert result["success"] is False
         assert "error" in result
-        assert "Order not found" in str(result["error"])
-        assert result["order_id"] == "missing-order"
+        assert "not found" in str(result["error"]["message"]).lower()
+        assert result["error"]["order_id"] == "missing-order"
     
     async def test_get_order_summary_api_error(self):
         """Test get_order_summary tool with API error."""
@@ -247,9 +255,10 @@ class TestGetOrderSummaryTool:
         
         # Verify error is handled
         assert isinstance(result, dict)
+        assert result["success"] is False
         assert "error" in result
-        assert "Server error" in str(result["error"])
-        assert result.get("status_code") == 503
+        assert "Server error" in str(result["error"]["message"])
+        assert result["error"]["status_code"] == 503
 
 
 class TestToolContextHandling:
@@ -309,7 +318,7 @@ class TestToolParameterHandling:
         call_args = self.mock_client.search_orders.call_args[0][0]
         assert call_args.limit == 50  # Default limit
         assert call_args.offset == 0  # Default offset
-        assert call_args.order_types is None  # Default None
+        assert call_args.orderTypes is None  # Default None
     
     async def test_search_orders_parameter_serialization(self, sample_search_response):
         """Test that tool parameters are properly included in response."""
@@ -329,11 +338,11 @@ class TestToolParameterHandling:
         )
         
         # Verify parameters are included in response for debugging
-        assert "parameters_used" in result
-        params = result["parameters_used"]
-        assert params["order_types"] == ["order"]
+        assert "search_params" in result["data"]
+        params = result["data"]["search_params"]
+        assert params["orderTypes"] == ["order"]
         assert params["limit"] == 25
-        assert params["search_text"] == "test search"
+        assert params["search"] == "test search"
 
 
 class TestCreateOrderTool:

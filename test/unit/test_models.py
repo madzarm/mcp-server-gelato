@@ -11,7 +11,10 @@ from src.models.orders import (
     CreateOrderFile, CreateOrderItem, CreateOrderRequest, MetadataObject,
     OrderDetail, OrderSummary, SearchOrdersParams, SearchOrdersResponse
 )
-from src.models.products import Catalog, CatalogDetail, ProductAttribute, ProductAttributeValue
+from src.models.products import (
+    Catalog, CatalogDetail, ProductAttribute, ProductAttributeValue,
+    SearchProductsRequest, SearchProductsResponse, Product, MeasureUnit, FilterHits
+)
 
 
 class TestCommonModels:
@@ -640,3 +643,198 @@ class TestModelValidation:
         assert request.metadata is None
         assert len(request.items) == 1
         assert request.items[0].files is None
+
+
+class TestProductSearchModels:
+    """Test cases for product search models."""
+    
+    def test_search_products_request_creation(self):
+        """Test SearchProductsRequest model creation."""
+        request_data = {
+            "attributeFilters": {
+                "Orientation": ["hor", "ver"],
+                "CoatingType": ["none", "glossy-coating"]
+            },
+            "limit": 25,
+            "offset": 10
+        }
+        
+        request = SearchProductsRequest(**request_data)
+        
+        assert request.attributeFilters == request_data["attributeFilters"]
+        assert request.limit == 25
+        assert request.offset == 10
+    
+    def test_search_products_request_defaults(self):
+        """Test SearchProductsRequest model with default values."""
+        request = SearchProductsRequest()
+        
+        assert request.attributeFilters is None
+        assert request.limit == 50  # Default value
+        assert request.offset == 0   # Default value
+    
+    def test_search_products_request_validation(self):
+        """Test SearchProductsRequest model validation."""
+        # Test limit validation (max 100)
+        with pytest.raises(ValidationError):
+            SearchProductsRequest(limit=150)
+        
+        # Test limit validation (min 1) 
+        with pytest.raises(ValidationError):
+            SearchProductsRequest(limit=0)
+        
+        # Test offset validation (min 0)
+        with pytest.raises(ValidationError):
+            SearchProductsRequest(offset=-1)
+        
+        # Test valid edge cases
+        request_max = SearchProductsRequest(limit=100, offset=0)
+        assert request_max.limit == 100
+        assert request_max.offset == 0
+    
+    def test_measure_unit_creation(self):
+        """Test MeasureUnit model creation."""
+        unit_data = {
+            "value": 12.308,
+            "measureUnit": "grams"
+        }
+        
+        unit = MeasureUnit(**unit_data)
+        
+        assert unit.value == 12.308
+        assert unit.measureUnit == "grams"
+    
+    def test_product_creation(self):
+        """Test Product model creation."""
+        product_data = {
+            "productUid": "8pp-accordion-fold_pf_dl_pt_100-lb-text-coated-silk_cl_4-4_ft_8pp-accordion-fold-ver_ver",
+            "attributes": {
+                "CoatingType": "none",
+                "ColorType": "4-4",
+                "FoldingType": "8pp-accordion-fold-ver",
+                "Orientation": "ver",
+                "PaperFormat": "DL",
+                "PaperType": "100-lb-text-coated-silk"
+            },
+            "weight": {
+                "value": 12.308,
+                "measureUnit": "grams"
+            },
+            "dimensions": {
+                "Thickness": {
+                    "value": 0.14629,
+                    "measureUnit": "mm"
+                },
+                "Width": {
+                    "value": 99,
+                    "measureUnit": "mm"
+                },
+                "Height": {
+                    "value": 210,
+                    "measureUnit": "mm"
+                }
+            },
+            "supportedCountries": ["US", "CA", "GB", "DE"]
+        }
+        
+        product = Product(**product_data)
+        
+        assert product.productUid == product_data["productUid"]
+        assert product.attributes["CoatingType"] == "none"
+        assert product.attributes["Orientation"] == "ver"
+        assert isinstance(product.weight, dict)
+        assert product.weight["value"] == 12.308
+        assert product.weight["measureUnit"] == "grams"
+        assert "Width" in product.dimensions
+        assert isinstance(product.dimensions["Width"], dict)
+        assert product.dimensions["Width"]["value"] == 99
+        assert product.dimensions["Width"]["measureUnit"] == "mm"
+        assert product.supportedCountries == ["US", "CA", "GB", "DE"]
+    
+    def test_product_minimal_creation(self):
+        """Test Product model creation with minimal required fields."""
+        minimal_data = {
+            "productUid": "test-product-uid",
+            "attributes": {"Color": "red"},
+            "weight": {"value": 100.0, "measureUnit": "grams"},
+            "dimensions": {"Width": {"value": 200, "measureUnit": "mm"}}
+        }
+        
+        product = Product(**minimal_data)
+        
+        assert product.productUid == "test-product-uid"
+        assert product.attributes["Color"] == "red"
+        assert product.supportedCountries is None  # Optional field
+    
+    def test_filter_hits_creation(self):
+        """Test FilterHits model creation."""
+        hits_data = {
+            "attributeHits": {
+                "CoatingType": {
+                    "glossy-protection": 1765,
+                    "matt-protection": 1592,
+                    "none": 2137
+                },
+                "Orientation": {
+                    "hor": 3041,
+                    "ver": 1590
+                }
+            }
+        }
+        
+        hits = FilterHits(**hits_data)
+        
+        assert "CoatingType" in hits.attributeHits
+        assert "Orientation" in hits.attributeHits
+        assert hits.attributeHits["CoatingType"]["none"] == 2137
+        assert hits.attributeHits["Orientation"]["ver"] == 1590
+    
+    def test_search_products_response_creation(self):
+        """Test SearchProductsResponse model creation."""
+        response_data = {
+            "products": [
+                {
+                    "productUid": "product-1",
+                    "attributes": {"Color": "red"},
+                    "weight": {"value": 100.0, "measureUnit": "grams"},
+                    "dimensions": {"Width": {"value": 200, "measureUnit": "mm"}}
+                },
+                {
+                    "productUid": "product-2", 
+                    "attributes": {"Color": "blue"},
+                    "weight": {"value": 105.0, "measureUnit": "grams"},
+                    "dimensions": {"Width": {"value": 210, "measureUnit": "mm"}}
+                }
+            ],
+            "hits": {
+                "attributeHits": {
+                    "Color": {"red": 1, "blue": 1, "green": 5}
+                }
+            }
+        }
+        
+        response = SearchProductsResponse(**response_data)
+        
+        assert len(response.products) == 2
+        assert response.products[0].productUid == "product-1"
+        assert response.products[1].productUid == "product-2"
+        assert isinstance(response.products[0], Product)
+        assert isinstance(response.hits, FilterHits)
+        assert response.hits.attributeHits["Color"]["green"] == 5
+    
+    def test_search_products_response_empty(self):
+        """Test SearchProductsResponse model with empty results."""
+        empty_data = {
+            "products": [],
+            "hits": {
+                "attributeHits": {
+                    "Color": {"red": 0, "blue": 0}
+                }
+            }
+        }
+        
+        response = SearchProductsResponse(**empty_data)
+        
+        assert len(response.products) == 0
+        assert isinstance(response.hits, FilterHits)
+        assert response.hits.attributeHits["Color"]["red"] == 0
