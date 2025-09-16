@@ -48,6 +48,14 @@ class ProductNotFoundError(GelatoAPIError):
         super().__init__(message, status_code=404)
 
 
+class TemplateNotFoundError(GelatoAPIError):
+    """Raised when a template is not found."""
+    
+    def __init__(self, template_id: str):
+        message = f"Template with ID '{template_id}' not found"
+        super().__init__(message, status_code=404)
+
+
 class ValidationError(GelatoAPIError):
     """Raised when request data validation fails."""
     

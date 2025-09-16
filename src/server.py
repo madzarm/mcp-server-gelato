@@ -9,8 +9,10 @@ from .client.gelato_client import GelatoClient
 from .config import get_settings
 from .resources.orders import register_order_resources
 from .resources.products import register_product_resources
+from .resources.templates import register_template_resources
 from .tools.orders import register_order_tools
 from .tools.products import register_product_tools
+from .tools.templates import register_template_tools
 from .utils.client_registry import client_registry
 from .utils.exceptions import AuthenticationError, GelatoAPIError
 from .utils.logging import get_logger
@@ -103,8 +105,10 @@ def create_server() -> FastMCP:
     # Register all tools and resources
     register_order_tools(mcp)
     register_product_tools(mcp)
+    register_template_tools(mcp)
     register_order_resources(mcp)
     register_product_resources(mcp)
+    register_template_resources(mcp)
     
     return mcp
 

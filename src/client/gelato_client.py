@@ -527,6 +527,60 @@ class GelatoClient:
             self.logger.error(f"Unexpected error in get_product: {str(e)}")
             raise GelatoAPIError(f"Failed to get product {product_uid}: {str(e)}")
     
+    # Template API methods
+    
+    async def get_template(self, template_id: str) -> "Template":
+        """
+        Get detailed information about a template.
+        
+        Args:
+            template_id: Template unique identifier
+            
+        Returns:
+            Detailed template information
+            
+        Raises:
+            TemplateNotFoundError: If the template is not found
+            GelatoAPIError: If the API request fails
+        """
+        from ..models.templates import Template
+        from ..utils.exceptions import TemplateNotFoundError
+        
+        url = f"{self.settings.gelato_ecommerce_url}/v1/templates/{template_id}"
+        
+        try:
+            self.logger.debug(f"Getting template: {template_id}")
+            response = await self._request("GET", url)
+            
+            raw_data = response.text
+            self.logger.debug(f"Raw get template response (first 200 chars): {raw_data[:200]}")
+            
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+            
+            if isinstance(data, dict):
+                # Handle different response formats  
+                if "data" in data and isinstance(data["data"], dict):
+                    # Wrapped format: {"data": {...}}
+                    return Template(**data["data"])
+                else:
+                    # Direct format: assume the dict is the template data
+                    return Template(**data)
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+                
+        except GelatoAPIError as e:
+            if e.status_code == 404:
+                raise TemplateNotFoundError(template_id)
+            raise
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in get_template: {str(e)}")
+            raise GelatoAPIError(f"Failed to get template {template_id}: {str(e)}")
+    
     async def test_connection(self) -> bool:
         """
         Test the connection to Gelato API.
