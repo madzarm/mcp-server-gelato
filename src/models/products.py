@@ -21,10 +21,10 @@ class ProductAttributeValue(BaseModel):
 
 class ProductAttribute(BaseModel):
     """Product attribute information."""
-    
+
     productAttributeUid: str = Field(..., description="Attribute unique identifier")
     title: str = Field(..., description="Attribute title")
-    values: List[ProductAttributeValue] = Field(..., description="List of possible attribute values")
+    values: Any = Field(..., description="Possible attribute values (flexible format)")
 
 
 class CatalogDetail(Catalog):
@@ -127,3 +127,16 @@ class ProductDetail(BaseModel):
     isPrintable: bool = Field(..., description="Whether the product is a printable item")
     validPageCounts: Optional[List[int]] = Field(None, description="Supported page counts for multi-page products")
     dimensions: Optional[Any] = Field(None, description="Product dimensions (flexible structure)")
+
+
+# Product pricing models
+
+class ProductPrice(BaseModel):
+    """Product price information for a specific quantity."""
+
+    productUid: str = Field(..., description="Product unique identifier")
+    country: str = Field(..., description="Country ISO code")
+    quantity: int = Field(..., description="Quantity of the product")
+    price: float = Field(..., description="Price of the product")
+    currency: str = Field(..., description="Currency ISO code")
+    pageCount: Optional[int] = Field(None, description="Page count for multi-page products")

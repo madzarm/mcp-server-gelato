@@ -33,7 +33,7 @@ class TestProductToolRegistration:
         register_product_tools(mock_mcp)
         
         # Check that expected tools are registered
-        expected_tools = ["search_products"]
+        expected_tools = ["search_products", "get_product_prices"]
         
         for tool_name in expected_tools:
             assert tool_name in mock_mcp.tools
@@ -657,5 +657,159 @@ class TestGetProductTool:
         assert "Unexpected error" in result["error"]["message"]
         assert "Unexpected validation error" in result["error"]["message"]
         
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+class TestGetProductPricesTool:
+    """Test cases for get_product_prices tool function."""
+
+    def setup_method(self):
+        """Set up each test."""
+        # Create a mock context with client access
+        self.mock_context = MagicMock()
+        self.mock_client = AsyncMock()
+        self.mock_context.request_context.lifespan_context = {"client": self.mock_client}
+        self.mock_context.info = AsyncMock()
+        self.mock_context.debug = AsyncMock()
+        self.mock_context.error = AsyncMock()
+
+        # Register tools to get access to the get product prices function
+        mock_mcp = MockFastMCP()
+        register_product_tools(mock_mcp)
+        self.get_product_prices = mock_mcp.tools["get_product_prices"]
+
+    async def test_get_product_prices_success_basic(self):
+        """Test successful product price retrieval with only product_uid."""
+        product_uid = "cards_pf_bb_pt_110-lb-cover-uncoated_cl_4-0_hor"
+
+        # Mock successful API response
+        from src.models.products import ProductPrice
+        mock_prices = [
+            ProductPrice(
+                productUid=product_uid,
+                country="US",
+                quantity=20,
+                price=87.883871,
+                currency="USD",
+                pageCount=None
+            ),
+            ProductPrice(
+                productUid=product_uid,
+                country="US",
+                quantity=400,
+                price=1365.982879,
+                currency="USD",
+                pageCount=None
+            ),
+            ProductPrice(
+                productUid=product_uid,
+                country="US",
+                quantity=700,
+                price=2151.28277,
+                currency="USD",
+                pageCount=None
+            )
+        ]
+
+        self.mock_client.get_product_prices.return_value = mock_prices
+
+        # Call the tool
+        result = await self.get_product_prices(
+            self.mock_context,
+            product_uid=product_uid
+        )
+
+        # Verify result
+        assert result["success"] is True
+        assert len(result["data"]["prices"]) == 3
+        assert result["data"]["prices"][0]["productUid"] == product_uid
+        assert result["data"]["prices"][0]["country"] == "US"
+        assert result["data"]["prices"][0]["quantity"] == 20
+        assert result["data"]["prices"][0]["price"] == 87.883871
+        assert result["data"]["prices"][0]["currency"] == "USD"
+        assert result["data"]["prices"][0]["pageCount"] is None
+        assert result["data"]["search_params"]["product_uid"] == product_uid
+        assert result["data"]["search_params"]["country"] is None
+        assert result["data"]["search_params"]["currency"] is None
+        assert result["data"]["search_params"]["page_count"] is None
+        assert "Found 3 price points for product" in result["message"]
+
+        # Verify API was called correctly
+        self.mock_client.get_product_prices.assert_called_once_with(
+            product_uid=product_uid,
+            country=None,
+            currency=None,
+            page_count=None
+        )
+
+        # Verify logging
+        self.mock_context.info.assert_called()
+        self.mock_context.debug.assert_called()
+
+    async def test_get_product_prices_empty_results(self):
+        """Test product prices with no results."""
+        product_uid = "nonexistent-product"
+
+        # Mock empty response
+        self.mock_client.get_product_prices.return_value = []
+
+        # Call the tool
+        result = await self.get_product_prices(
+            self.mock_context,
+            product_uid=product_uid
+        )
+
+        # Verify empty results
+        assert result["success"] is True
+        assert len(result["data"]["prices"]) == 0
+        assert "No price information found for product" in result["message"]
+
+    async def test_get_product_prices_product_not_found(self):
+        """Test product prices with non-existent product."""
+        product_uid = "nonexistent-product-uid"
+
+        # Mock product not found error
+        from src.utils.exceptions import ProductNotFoundError
+        self.mock_client.get_product_prices.side_effect = ProductNotFoundError(product_uid)
+
+        # Call the tool
+        result = await self.get_product_prices(
+            self.mock_context,
+            product_uid=product_uid
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["operation"] == "get_product_prices"
+        assert result["error"]["product_uid"] == product_uid
+        assert result["error"]["status_code"] == 404
+        assert "not found" in str(result["error"]["message"]).lower()
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+    async def test_get_product_prices_api_error(self):
+        """Test product prices with general API error."""
+        product_uid = "test-product-uid"
+
+        # Mock API error
+        api_error = GelatoAPIError("Internal server error", status_code=500)
+        api_error.response_data = {"detail": "Server error"}
+        self.mock_client.get_product_prices.side_effect = api_error
+
+        # Call the tool
+        result = await self.get_product_prices(
+            self.mock_context,
+            product_uid=product_uid
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["operation"] == "get_product_prices"
+        assert result["error"]["product_uid"] == product_uid
+        assert result["error"]["status_code"] == 500
+        assert result["error"]["response_data"] == {"detail": "Server error"}
+        assert "Internal server error" in result["error"]["message"]
+
         # Verify error was logged
         self.mock_context.error.assert_called_once()

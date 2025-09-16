@@ -147,7 +147,8 @@ class TestProductModels:
         assert value.title == "A5 Size"
     
     def test_product_attribute_creation(self):
-        """Test ProductAttribute model creation."""
+        """Test ProductAttribute model creation with flexible values format."""
+        # Test with list format (backward compatibility)
         attribute_data = {
             "productAttributeUid": "size",
             "title": "Size Options",
@@ -156,14 +157,33 @@ class TestProductModels:
                 {"productAttributeValueUid": "a5", "title": "A5"}
             ]
         }
-        
+
         attribute = ProductAttribute(**attribute_data)
-        
+
         assert attribute.productAttributeUid == "size"
         assert attribute.title == "Size Options"
         assert len(attribute.values) == 2
-        assert attribute.values[0].productAttributeValueUid == "a4"
-        assert attribute.values[1].productAttributeValueUid == "a5"
+        assert attribute.values[0]["productAttributeValueUid"] == "a4"
+        assert attribute.values[1]["productAttributeValueUid"] == "a5"
+
+        # Test with dict format (new flexible format)
+        attribute_data_dict = {
+            "productAttributeUid": "folding",
+            "title": "Folding Options",
+            "values": {
+                "folded_product": {
+                    "productAttributeValueUid": "folded_product",
+                    "title": "folded_product"
+                }
+            }
+        }
+
+        attribute_dict = ProductAttribute(**attribute_data_dict)
+
+        assert attribute_dict.productAttributeUid == "folding"
+        assert attribute_dict.title == "Folding Options"
+        assert isinstance(attribute_dict.values, dict)
+        assert "folded_product" in attribute_dict.values
     
     def test_catalog_detail_creation(self):
         """Test CatalogDetail model creation."""

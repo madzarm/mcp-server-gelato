@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ..config import Settings
 from ..models.orders import CreateOrderRequest, OrderDetail, SearchOrdersParams, SearchOrdersResponse
-from ..models.products import Catalog, CatalogDetail, SearchProductsRequest, SearchProductsResponse
+from ..models.products import Catalog, CatalogDetail, SearchProductsRequest, SearchProductsResponse, ProductPrice
 from ..models.shipments import ShipmentMethodsResponse
 from ..utils.auth import get_auth_headers, validate_api_key
 from ..utils.exceptions import (
@@ -527,7 +527,82 @@ class GelatoClient:
         except Exception as e:
             self.logger.error(f"Unexpected error in get_product: {str(e)}")
             raise GelatoAPIError(f"Failed to get product {product_uid}: {str(e)}")
-    
+
+    async def get_product_prices(
+        self,
+        product_uid: str,
+        country: Optional[str] = None,
+        currency: Optional[str] = None,
+        page_count: Optional[int] = None
+    ) -> List[ProductPrice]:
+        """
+        Get price information for all quantities of a product.
+
+        Args:
+            product_uid: Product unique identifier
+            country: Optional country ISO code (e.g., "US", "GB", "DE")
+            currency: Optional currency ISO code (e.g., "USD", "GBP", "EUR")
+            page_count: Optional page count (mandatory for multi-page products)
+
+        Returns:
+            List of ProductPrice objects with quantity-based pricing
+
+        Raises:
+            ProductNotFoundError: If the product is not found
+            GelatoAPIError: If the API request fails
+        """
+        from ..utils.exceptions import ProductNotFoundError
+
+        url = f"{self.settings.gelato_product_url}/v3/products/{product_uid}/prices"
+
+        # Build query parameters
+        params = {}
+        if country:
+            params["country"] = country
+        if currency:
+            params["currency"] = currency
+        if page_count is not None:
+            params["pageCount"] = page_count
+
+        try:
+            self.logger.debug(f"Getting product prices for {product_uid} with params: {params}")
+            response = await self._request("GET", url, params=params if params else None)
+
+            raw_data = response.text
+            self.logger.debug(f"Raw product prices response (first 200 chars): {raw_data[:200]}")
+
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+
+            if isinstance(data, list):
+                # Direct array format: [{"productUid": ..., "price": ...}, ...]
+                return [ProductPrice(**price_data) for price_data in data]
+            elif isinstance(data, dict):
+                # Handle wrapped response formats
+                if "data" in data and isinstance(data["data"], list):
+                    # Wrapped format: {"data": [...]}
+                    return [ProductPrice(**price_data) for price_data in data["data"]]
+                elif "prices" in data and isinstance(data["prices"], list):
+                    # Alternative format: {"prices": [...]}
+                    return [ProductPrice(**price_data) for price_data in data["prices"]]
+                else:
+                    self.logger.error(f"Unexpected dict response format, keys: {list(data.keys())}")
+                    raise GelatoValidationError(f"Unexpected response format: dict with keys {list(data.keys())}")
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected list or dict, got {type(data)}")
+
+        except GelatoAPIError as e:
+            if e.status_code == 404:
+                raise ProductNotFoundError(product_uid)
+            raise
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in get_product_prices: {str(e)}")
+            raise GelatoAPIError(f"Failed to get product prices for {product_uid}: {str(e)}")
+
     # Template API methods
     
     async def get_template(self, template_id: str) -> "Template":
