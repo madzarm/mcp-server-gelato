@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import List
+from typing import List, Optional
 
 import httpx
 from pydantic import ValidationError
@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from ..config import Settings
 from ..models.orders import CreateOrderRequest, OrderDetail, SearchOrdersParams, SearchOrdersResponse
 from ..models.products import Catalog, CatalogDetail, SearchProductsRequest, SearchProductsResponse
+from ..models.shipments import ShipmentMethodsResponse
 from ..utils.auth import get_auth_headers, validate_api_key
 from ..utils.exceptions import (
     AuthenticationError,
@@ -580,7 +581,66 @@ class GelatoClient:
         except Exception as e:
             self.logger.error(f"Unexpected error in get_template: {str(e)}")
             raise GelatoAPIError(f"Failed to get template {template_id}: {str(e)}")
-    
+
+    # Shipment API methods
+
+    async def list_shipment_methods(self, country: Optional[str] = None) -> ShipmentMethodsResponse:
+        """
+        Get available shipment methods, optionally filtered by destination country.
+
+        Args:
+            country: Optional destination country ISO code (e.g., "US", "GB", "DE")
+                    If provided, only shipment methods available for this country are returned
+
+        Returns:
+            Response containing list of available shipment methods
+
+        Raises:
+            GelatoAPIError: If the API request fails
+        """
+        url = f"{self.settings.gelato_shipment_url}/v1/shipment-methods"
+
+        # Add country query parameter if provided
+        params = {}
+        if country:
+            params["country"] = country
+
+        try:
+            self.logger.debug(f"Getting shipment methods with params: {params}")
+            response = await self._request("GET", url, params=params if params else None)
+
+            raw_data = response.text
+            self.logger.debug(f"Raw shipment methods response (first 200 chars): {raw_data[:200]}")
+
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+
+            if isinstance(data, dict):
+                # Handle different response formats
+                if "shipmentMethods" in data:
+                    # Direct format: {"shipmentMethods": [...]}
+                    return ShipmentMethodsResponse(**data)
+                elif "data" in data:
+                    # Wrapped format: {"data": [...], "pagination": {...}}
+                    if isinstance(data["data"], dict) and "shipmentMethods" in data["data"]:
+                        return ShipmentMethodsResponse(**data["data"])
+                    else:
+                        # Assume data contains the shipmentMethods directly
+                        return ShipmentMethodsResponse(shipmentMethods=data["data"])
+                else:
+                    self.logger.error(f"Unexpected dict response format, keys: {list(data.keys())}")
+                    raise GelatoValidationError(f"Unexpected response format: dict with keys {list(data.keys())}")
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in list_shipment_methods: {str(e)}")
+            raise GelatoAPIError(f"Failed to list shipment methods: {str(e)}")
+
     async def test_connection(self) -> bool:
         """
         Test the connection to Gelato API.

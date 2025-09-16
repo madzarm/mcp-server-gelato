@@ -27,6 +27,10 @@ class Settings(BaseSettings):
         default="https://ecommerce.gelatoapis.com",
         description="Base URL for Gelato E-commerce API"
     )
+    gelato_shipment_url: str = Field(
+        default="https://shipment.gelatoapis.com",
+        description="Base URL for Gelato Shipment API"
+    )
     
     # HTTP Client Configuration
     timeout: int = Field(
