@@ -140,3 +140,42 @@ class ProductPrice(BaseModel):
     price: float = Field(..., description="Price of the product")
     currency: str = Field(..., description="Currency ISO code")
     pageCount: Optional[int] = Field(None, description="Page count for multi-page products")
+
+
+# Stock availability models
+
+class StockAvailabilityRequest(BaseModel):
+    """Request model for checking stock availability."""
+
+    products: List[str] = Field(..., description="Array of product UIDs (1-250 products)")
+
+    def model_validate(cls, values):
+        """Validate products list constraints."""
+        if "products" in values:
+            products = values["products"]
+            if not products:
+                raise ValueError("At least one product UID is required")
+            if len(products) > 250:
+                raise ValueError(f"Maximum 250 products allowed, got {len(products)}")
+        return values
+
+
+class RegionAvailability(BaseModel):
+    """Stock availability information for a specific region."""
+
+    stockRegionUid: str = Field(..., description="Stock region UID (US-CA, EU, UK, AS, OC, SA, ROW)")
+    status: str = Field(..., description="Availability status")
+    replenishmentDate: Optional[str] = Field(None, description="Estimated replenishment date (YYYY-MM-DD)")
+
+
+class ProductAvailability(BaseModel):
+    """Product availability across all regions."""
+
+    productUid: str = Field(..., description="Product UID from the request")
+    availability: List[RegionAvailability] = Field(..., description="Availability in each region")
+
+
+class StockAvailabilityResponse(BaseModel):
+    """Response model for stock availability check."""
+
+    productsAvailability: List[ProductAvailability] = Field(..., description="Array of product availability in regions")

@@ -1,6 +1,6 @@
 """Unit tests for product tools."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -33,7 +33,7 @@ class TestProductToolRegistration:
         register_product_tools(mock_mcp)
         
         # Check that expected tools are registered
-        expected_tools = ["search_products", "get_product_prices"]
+        expected_tools = ["search_products", "get_product_prices", "check_stock_availability"]
         
         for tool_name in expected_tools:
             assert tool_name in mock_mcp.tools
@@ -810,6 +810,349 @@ class TestGetProductPricesTool:
         assert result["error"]["status_code"] == 500
         assert result["error"]["response_data"] == {"detail": "Server error"}
         assert "Internal server error" in result["error"]["message"]
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+
+class TestCheckStockAvailabilityTool:
+    """Test cases for check_stock_availability tool function."""
+
+    def setup_method(self):
+        """Set up each test."""
+        # Create a mock context with client access
+        self.mock_context = MagicMock()
+        self.mock_client = AsyncMock()
+        self.mock_context.request_context.lifespan_context = {"client": self.mock_client}
+        self.mock_context.info = AsyncMock()
+        self.mock_context.debug = AsyncMock()
+        self.mock_context.error = AsyncMock()
+
+        # Register tools to get access to the check stock availability function
+        mock_mcp = MockFastMCP()
+        register_product_tools(mock_mcp)
+        self.check_stock_availability = mock_mcp.tools["check_stock_availability"]
+
+    async def test_check_stock_availability_success_single_product(self):
+        """Test stock availability check with single product."""
+        products = ["wall_hanger_product_whs_290-mm_whc_white_whm_wood_whp_w14xt20-mm"]
+
+        # Mock successful API response
+        from src.models.products import StockAvailabilityResponse, ProductAvailability, RegionAvailability
+
+        mock_response = StockAvailabilityResponse(
+            productsAvailability=[
+                ProductAvailability(
+                    productUid=products[0],
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="in-stock",
+                            replenishmentDate=None
+                        ),
+                        RegionAvailability(
+                            stockRegionUid="EU",
+                            status="out-of-stock-replenishable",
+                            replenishmentDate="2024-02-13"
+                        ),
+                        RegionAvailability(
+                            stockRegionUid="UK",
+                            status="in-stock",
+                            replenishmentDate=None
+                        )
+                    ]
+                )
+            ]
+        )
+
+        self.mock_client.check_stock_availability.return_value = mock_response
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify result
+        assert result["success"] is True
+        assert len(result["data"]["productsAvailability"]) == 1
+
+        product_availability = result["data"]["productsAvailability"][0]
+        assert product_availability["productUid"] == products[0]
+        assert len(product_availability["availability"]) == 3
+
+        # Check specific availability statuses
+        us_ca_availability = next(a for a in product_availability["availability"] if a["stockRegionUid"] == "US-CA")
+        assert us_ca_availability["status"] == "in-stock"
+        assert us_ca_availability["replenishmentDate"] is None
+
+        eu_availability = next(a for a in product_availability["availability"] if a["stockRegionUid"] == "EU")
+        assert eu_availability["status"] == "out-of-stock-replenishable"
+        assert eu_availability["replenishmentDate"] == "2024-02-13"
+
+        assert "Successfully checked stock availability for 1 products" in result["message"]
+
+        # Verify API was called correctly
+        self.mock_client.check_stock_availability.assert_called_once_with(products)
+
+        # Verify logging
+        self.mock_context.info.assert_called()
+
+    async def test_check_stock_availability_success_multiple_products(self):
+        """Test stock availability check with multiple products."""
+        products = [
+            "wall_hanger_product_whs_290-mm_whc_white_whm_wood_whp_w14xt20-mm",
+            "frame_and_poster_product_frs_300x400-mm_frc_black_frm_wood_frp_w12xt22-mm"
+        ]
+
+        # Mock successful API response
+        from src.models.products import StockAvailabilityResponse, ProductAvailability, RegionAvailability
+
+        mock_response = StockAvailabilityResponse(
+            productsAvailability=[
+                ProductAvailability(
+                    productUid=products[0],
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="in-stock",
+                            replenishmentDate=None
+                        )
+                    ]
+                ),
+                ProductAvailability(
+                    productUid=products[1],
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="non-stockable",
+                            replenishmentDate=None
+                        )
+                    ]
+                )
+            ]
+        )
+
+        self.mock_client.check_stock_availability.return_value = mock_response
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify result
+        assert result["success"] is True
+        assert len(result["data"]["productsAvailability"]) == 2
+        assert "Successfully checked stock availability for 2 products" in result["message"]
+
+        # Verify API was called correctly
+        self.mock_client.check_stock_availability.assert_called_once_with(products)
+
+    async def test_check_stock_availability_empty_products_list(self):
+        """Test stock availability check with empty products list."""
+        products = []
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["message"] == "At least one product UID is required"
+        assert result["error"]["operation"] == "check_stock_availability"
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+    async def test_check_stock_availability_too_many_products(self):
+        """Test stock availability check with too many products (>250)."""
+        # Create 251 product UIDs
+        products = [f"product-uid-{i}" for i in range(251)]
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["message"] == "Maximum 250 products allowed, got 251"
+        assert result["error"]["operation"] == "check_stock_availability"
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+    async def test_check_stock_availability_api_error_too_many_products(self):
+        """Test stock availability with API error for too many products."""
+        products = ["product1", "product2"]
+
+        # Mock API error for too many products
+        api_error = GelatoAPIError("Too many products requested: 273 of maximum 250.", status_code=400)
+        api_error.response_data = {
+            "code": "invalid_request_too_many_products",
+            "message": "Too many products requested: 273 of maximum 250."
+        }
+        self.mock_client.check_stock_availability.side_effect = api_error
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["operation"] == "check_stock_availability"
+        assert result["error"]["status_code"] == 400
+        assert "Too many products requested" in result["error"]["message"]
+        assert result["error"]["response_data"]["code"] == "invalid_request_too_many_products"
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+    async def test_check_stock_availability_api_error_no_products(self):
+        """Test stock availability with API error for no products."""
+        products = ["product1"]
+
+        # Mock API error for no products provided
+        api_error = GelatoAPIError("No products provided, at least one is required.", status_code=400)
+        api_error.response_data = {
+            "code": "invalid_request_products_not_provided",
+            "message": "No products provided, at least one is required."
+        }
+        self.mock_client.check_stock_availability.side_effect = api_error
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["operation"] == "check_stock_availability"
+        assert result["error"]["status_code"] == 400
+        assert "No products provided" in result["error"]["message"]
+        assert result["error"]["response_data"]["code"] == "invalid_request_products_not_provided"
+
+        # Verify error was logged
+        self.mock_context.error.assert_called_once()
+
+    async def test_check_stock_availability_mixed_statuses(self):
+        """Test stock availability with mixed availability statuses."""
+        products = [
+            "existing-product",
+            "non-existing-product",
+            "non-stockable-product"
+        ]
+
+        # Mock API response with mixed statuses
+        from src.models.products import StockAvailabilityResponse, ProductAvailability, RegionAvailability
+
+        mock_response = StockAvailabilityResponse(
+            productsAvailability=[
+                ProductAvailability(
+                    productUid="existing-product",
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="in-stock",
+                            replenishmentDate=None
+                        ),
+                        RegionAvailability(
+                            stockRegionUid="EU",
+                            status="out-of-stock",
+                            replenishmentDate=None
+                        )
+                    ]
+                ),
+                ProductAvailability(
+                    productUid="non-existing-product",
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="not-supported",
+                            replenishmentDate=None
+                        ),
+                        RegionAvailability(
+                            stockRegionUid="EU",
+                            status="not-supported",
+                            replenishmentDate=None
+                        )
+                    ]
+                ),
+                ProductAvailability(
+                    productUid="non-stockable-product",
+                    availability=[
+                        RegionAvailability(
+                            stockRegionUid="US-CA",
+                            status="non-stockable",
+                            replenishmentDate=None
+                        )
+                    ]
+                )
+            ]
+        )
+
+        self.mock_client.check_stock_availability.return_value = mock_response
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify result
+        assert result["success"] is True
+        assert len(result["data"]["productsAvailability"]) == 3
+
+        # Verify different statuses are present
+        product_avails = result["data"]["productsAvailability"]
+
+        # Check existing product has in-stock status
+        existing_product = next(p for p in product_avails if p["productUid"] == "existing-product")
+        us_ca_status = next(a["status"] for a in existing_product["availability"] if a["stockRegionUid"] == "US-CA")
+        assert us_ca_status == "in-stock"
+
+        # Check non-existing product has not-supported status
+        non_existing_product = next(p for p in product_avails if p["productUid"] == "non-existing-product")
+        us_ca_status = next(a["status"] for a in non_existing_product["availability"] if a["stockRegionUid"] == "US-CA")
+        assert us_ca_status == "not-supported"
+
+        # Check non-stockable product has non-stockable status
+        non_stockable_product = next(p for p in product_avails if p["productUid"] == "non-stockable-product")
+        us_ca_status = next(a["status"] for a in non_stockable_product["availability"] if a["stockRegionUid"] == "US-CA")
+        assert us_ca_status == "non-stockable"
+
+        assert "Successfully checked stock availability for 3 products" in result["message"]
+
+    async def test_check_stock_availability_general_api_error(self):
+        """Test stock availability with general API error."""
+        products = ["product1"]
+
+        # Mock general API error
+        api_error = GelatoAPIError("We had a problem with our server. Problem reported. Try again later.", status_code=500)
+        api_error.response_data = {
+            "code": "internal_server_error",
+            "message": "We had a problem with our server. Problem reported. Try again later."
+        }
+        self.mock_client.check_stock_availability.side_effect = api_error
+
+        # Call the tool
+        result = await self.check_stock_availability(
+            self.mock_context,
+            products=products
+        )
+
+        # Verify error response
+        assert result["success"] is False
+        assert result["error"]["operation"] == "check_stock_availability"
+        assert result["error"]["status_code"] == 500
+        assert "server" in result["error"]["message"].lower()
 
         # Verify error was logged
         self.mock_context.error.assert_called_once()

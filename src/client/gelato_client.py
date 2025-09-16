@@ -603,6 +603,66 @@ class GelatoClient:
             self.logger.error(f"Unexpected error in get_product_prices: {str(e)}")
             raise GelatoAPIError(f"Failed to get product prices for {product_uid}: {str(e)}")
 
+    async def check_stock_availability(self, products: List[str]) -> "StockAvailabilityResponse":
+        """
+        Check stock availability for multiple products across regions.
+
+        Args:
+            products: List of product UIDs to check (1-250 products)
+
+        Returns:
+            Stock availability response containing availability for each product in each region
+
+        Raises:
+            GelatoAPIError: If the API request fails or validation errors occur
+        """
+        from ..models.products import StockAvailabilityRequest, StockAvailabilityResponse
+
+        # Validate input constraints
+        if not products:
+            raise GelatoAPIError("At least one product UID is required", status_code=400)
+
+        if len(products) > 250:
+            raise GelatoAPIError(f"Maximum 250 products allowed, got {len(products)}", status_code=400)
+
+        url = f"{self.settings.gelato_product_url}/v3/stock/region-availability"
+
+        try:
+            # Build request payload
+            request = StockAvailabilityRequest(products=products)
+            payload = request.model_dump()
+
+            self.logger.debug(f"Checking stock availability for {len(products)} products")
+            response = await self._request("POST", url, json=payload)
+
+            raw_data = response.text
+            self.logger.debug(f"Raw stock availability response (first 200 chars): {raw_data[:200]}")
+
+            data = response.json()
+            self.logger.debug(f"Parsed JSON type: {type(data)}")
+
+            if isinstance(data, dict):
+                # Handle different response formats
+                if "productsAvailability" in data:
+                    # Direct format: {"productsAvailability": [...]}
+                    return StockAvailabilityResponse(**data)
+                elif "data" in data and isinstance(data["data"], dict):
+                    # Wrapped format: {"data": {"productsAvailability": [...]}}
+                    return StockAvailabilityResponse(**data["data"])
+                else:
+                    self.logger.error(f"Unexpected dict response format, keys: {list(data.keys())}")
+                    raise GelatoValidationError(f"Unexpected response format: dict with keys {list(data.keys())}")
+            else:
+                self.logger.error(f"Unexpected response type: {type(data)}")
+                raise GelatoValidationError(f"Expected dict, got {type(data)}")
+
+        except ValidationError as e:
+            self.logger.error(f"Pydantic validation error: {str(e)}")
+            raise GelatoValidationError(f"Invalid response format: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in check_stock_availability: {str(e)}")
+            raise GelatoAPIError(f"Failed to check stock availability: {str(e)}")
+
     # Template API methods
     
     async def get_template(self, template_id: str) -> "Template":

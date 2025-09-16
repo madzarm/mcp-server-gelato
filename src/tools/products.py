@@ -465,3 +465,132 @@ def register_product_tools(mcp: FastMCP):
                     "product_uid": product_uid
                 }
             }
+
+    @mcp.tool()
+    async def check_stock_availability(
+        ctx: Context,
+        products: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Check stock availability for multiple products across regions.
+
+        This tool allows you to check the stock availability of multiple products
+        across different geographical regions. It's useful for determining which
+        products are available for fulfillment in specific regions.
+
+        Args:
+            products: List of product UIDs to check availability for.
+                     Product UIDs can be obtained from the search_products tool.
+                     Minimum: 1 product, Maximum: 250 products.
+
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if the request was successful
+            - data: Object containing:
+              - productsAvailability: List of product availability information:
+                - productUid: Product unique identifier
+                - availability: List of availability per region:
+                  - stockRegionUid: Region identifier (US-CA, EU, UK, AS, OC, SA, ROW)
+                  - status: Availability status (see below)
+                  - replenishmentDate: Estimated restock date (if applicable)
+            - message: Helpful message about the results
+
+        Stock Region UIDs:
+            - US-CA: United States and Canada
+            - EU: Europe
+            - UK: United Kingdom
+            - AS: Asia
+            - OC: Oceania
+            - SA: South America
+            - ROW: Rest of the world
+
+        Availability Status Values:
+            - in-stock: Product is available and can be delivered to the region
+            - out-of-stock-replenishable: Temporarily out of stock, replenishment date provided
+            - out-of-stock: Currently unavailable with no expected restock
+            - non-stockable: Product doesn't require stock (e.g., print-on-demand items)
+            - not-supported: Product UID not recognized by the system
+
+        Example usage:
+            - Check single product: check_stock_availability(products=["cards_pf_a5_pt_350-gsm-coated-silk_cl_4-4_ver"])
+            - Check multiple products: check_stock_availability(products=["product1", "product2", "product3"])
+
+        Use this tool to:
+            - Plan order fulfillment based on regional availability
+            - Determine which regions can fulfill specific products
+            - Check stock status before placing large orders
+            - Identify products that may have longer lead times
+        """
+        client: GelatoClient = ctx.request_context.lifespan_context["client"]
+
+        try:
+            # Validate input constraints
+            if not products:
+                await ctx.error("Empty products list provided")
+                return {
+                    "success": False,
+                    "error": {
+                        "message": "At least one product UID is required",
+                        "operation": "check_stock_availability"
+                    }
+                }
+
+            if len(products) > 250:
+                await ctx.error(f"Too many products: {len(products)} > 250")
+                return {
+                    "success": False,
+                    "error": {
+                        "message": f"Maximum 250 products allowed, got {len(products)}",
+                        "operation": "check_stock_availability"
+                    }
+                }
+
+            # Log the operation start
+            await ctx.info(f"Checking stock availability for {len(products)} products")
+            await ctx.debug(f"Product UIDs: {', '.join(products[:5])}{'...' if len(products) > 5 else ''}")
+
+            # Execute API call
+            result = await client.check_stock_availability(products)
+
+            # Format response
+            response_data = result.model_dump()
+
+            response = {
+                "success": True,
+                "data": response_data
+            }
+
+            # Add helpful message
+            product_count = len(response_data["productsAvailability"])
+            response["message"] = f"Successfully checked stock availability for {product_count} products"
+
+            # Log success
+            await ctx.info(f"Successfully retrieved availability for {product_count} products")
+
+            return response
+
+        except GelatoAPIError as e:
+            error_message = f"Failed to check stock availability: {str(e)}"
+            await ctx.error(error_message)
+
+            return {
+                "success": False,
+                "error": {
+                    "message": str(e),
+                    "operation": "check_stock_availability",
+                    "status_code": getattr(e, 'status_code', None),
+                    "response_data": getattr(e, 'response_data', {})
+                }
+            }
+
+        except Exception as e:
+            error_message = f"Unexpected error checking stock availability: {str(e)}"
+            await ctx.error(error_message)
+
+            return {
+                "success": False,
+                "error": {
+                    "message": error_message,
+                    "operation": "check_stock_availability"
+                }
+            }
