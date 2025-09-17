@@ -42,7 +42,7 @@ Repository = "https://github.com/madzarmaksim/mcp-server-gelato.git"
 "Bug Tracker" = "https://github.com/madzarmaksim/mcp-server-gelato/issues"
 
 [project.scripts]
-mcp-server-gelato = "main:main"
+mcp-server-gelato = "src.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
