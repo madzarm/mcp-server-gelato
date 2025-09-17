@@ -1,0 +1,56 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "src/server.py",
+    "entrypoint": "server"
+  },
+  "environment": {
+    "python": {
+      "version": ">=3.13"
+    },
+    "packages": [
+      "httpx>=0.28.1",
+      "mcp[cli]>=1.13.1",
+      "pydantic>=2.0.0",
+      "pydantic-settings>=2.0.0",
+      "python-dotenv>=1.0.0"
+    ]
+  },
+  "deployment": {
+    "environment_variables": {
+      "GELATO_API_KEY": {
+        "description": "Gelato API key for authentication",
+        "required": true
+      },
+      "GELATO_BASE_URL": {
+        "description": "Gelato order API base URL",
+        "default": "https://order.gelatoapis.com"
+      },
+      "GELATO_PRODUCT_URL": {
+        "description": "Gelato product API base URL",
+        "default": "https://product.gelatoapis.com"
+      },
+      "GELATO_SHIPMENT_URL": {
+        "description": "Gelato shipment API base URL",
+        "default": "https://shipment.gelatoapis.com"
+      },
+      "TIMEOUT": {
+        "description": "Request timeout in seconds",
+        "default": "30"
+      },
+      "DEBUG": {
+        "description": "Enable debug logging",
+        "default": "false"
+      }
+    },
+    "transport": "stdio"
+  },
+  "metadata": {
+    "name": "Gelato Print API Server",
+    "description": "MCP server for Gelato print-on-demand API integration",
+    "version": "0.1.0",
+    "author": "Maksim Madzar",
+    "homepage": "https://github.com/madzarmaksim/mcp-server-gelato",
+    "tags": ["printing", "api", "gelato", "print-on-demand", "mcp-server"]
+  }
+}

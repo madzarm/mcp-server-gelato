@@ -1,9 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "mcp-server-gelato"
 version = "0.1.0"
 description = "MCP server for Gelato print-on-demand API"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    {name = "Maksim Madzar", email = "madzarmaksim@gmail.com"},
+]
+maintainers = [
+    {name = "Maksim Madzar", email = "madzarmaksim@gmail.com"},
+]
+license = {text = "MIT"}
+keywords = ["mcp", "gelato", "printing", "api", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Printing",
+]
 dependencies = [
     "httpx>=0.28.1",
     "mcp[cli]>=1.13.1",
@@ -11,6 +34,18 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/madzarmaksim/mcp-server-gelato"
+Documentation = "https://github.com/madzarmaksim/mcp-server-gelato#readme"
+Repository = "https://github.com/madzarmaksim/mcp-server-gelato.git"
+"Bug Tracker" = "https://github.com/madzarmaksim/mcp-server-gelato/issues"
+
+[project.scripts]
+mcp-server-gelato = "main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [project.optional-dependencies]
 test = [
