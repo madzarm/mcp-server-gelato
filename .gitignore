@@ -26,4 +26,21 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Build and distribution artifacts
+*.egg-info/
+.eggs/
+*.whl
+*.tar.gz
+
+# Package management
+.uv/
+Pipfile.lock
+poetry.lock
+
+# Documentation builds
+docs/_build/
+site/
+
+# Project-specific
 CLAUDE.md
