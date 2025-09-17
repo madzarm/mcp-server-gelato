@@ -25,10 +25,15 @@ class ClientRegistry:
         """Get the active Gelato client."""
         if self._client is None:
             raise RuntimeError(
-                "No Gelato client registered. This usually means the server hasn't "
-                "finished initializing yet."
+                "❌ Server not configured. Please set your GELATO_API_KEY environment variable.\n"
+                "💡 For Claude Desktop: claude mcp add gelato -v GELATO_API_KEY=your_key_here -- uvx --from git+https://github.com/madzarmaksim/mcp-server-gelato mcp-server-gelato\n"
+                "💡 Or use the 'configure_gelato' tool to set up your API key."
             )
         return self._client
+
+    def is_configured(self) -> bool:
+        """Check if a client is registered (API key configured)."""
+        return self._client is not None
     
     def clear_client(self) -> None:
         """Clear the client reference (for cleanup)."""

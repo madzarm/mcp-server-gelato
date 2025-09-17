@@ -10,6 +10,7 @@ from .config import get_settings
 from .resources.orders import register_order_resources
 from .resources.products import register_product_resources
 from .resources.templates import register_template_resources
+from .tools.config import register_config_tools
 from .tools.orders import register_order_tools
 from .tools.products import register_product_tools
 from .tools.shipments import register_shipment_tools
@@ -29,59 +30,80 @@ async def lifespan(server: FastMCP):
     """
     logger = get_logger("server")
     
-    # Load and validate settings
+    # Load settings without API key validation initially
     try:
-        settings = get_settings()
+        settings = get_settings(validate_api_key=False)
     except ValueError as e:
         logger.error(f"❌ Configuration error: {e}")
         logger.info("💡 Please check your environment variables or .env file")
         raise
     
-    # Initialize Gelato API client
-    try:
-        client = GelatoClient(
-            api_key=settings.gelato_api_key,
-            settings=settings
-        )
-        
-        # Test connection to ensure API key is valid
-        logger.info("🔍 Testing connection to Gelato API...")
-        await client.test_connection()
-        logger.info("✅ Successfully connected to Gelato API")
-        
-        # Register client with registry for resource access
-        client_registry.set_client(client)
-        logger.info("📝 Client registered for resource access")
-        
-        # Yield context with initialized resources
-        yield {
-            "client": client,
-            "settings": settings
-        }
-        
-    except AuthenticationError as e:
-        logger.error(f"❌ Authentication failed: {e}")
-        logger.info("💡 Please check your GELATO_API_KEY environment variable")
-        raise
-    
-    except GelatoAPIError as e:
-        logger.error(f"❌ Failed to connect to Gelato API: {e}")
-        logger.info("💡 Please check your network connection and API key")
-        raise
-    
-    except Exception as e:
-        logger.error(f"❌ Unexpected error during startup: {e}")
-        raise
-    
-    finally:
-        # Clean up resources
+    # Check if API key is configured
+    if settings.is_configured():
+        # Initialize Gelato API client with API key
         try:
-            if 'client' in locals():
-                await client.close()
-            # Clear client registry
-            client_registry.clear_client()
+            client = GelatoClient(
+                api_key=settings.gelato_api_key,
+                settings=settings
+            )
+
+            # Test connection to ensure API key is valid
+            logger.info("🔍 Testing connection to Gelato API...")
+            await client.test_connection()
+            logger.info("✅ Successfully connected to Gelato API")
+
+            # Register client with registry for resource access
+            client_registry.set_client(client)
+            logger.info("📝 Client registered for resource access")
+
+            # Yield context with initialized resources
+            yield {
+                "client": client,
+                "settings": settings,
+                "configured": True
+            }
+
+        except AuthenticationError as e:
+            logger.error(f"❌ Authentication failed: {e}")
+            logger.info("💡 Please check your GELATO_API_KEY environment variable")
+            raise
+
+        except GelatoAPIError as e:
+            logger.error(f"❌ Failed to connect to Gelato API: {e}")
+            logger.info("💡 Please check your network connection and API key")
+            raise
+
         except Exception as e:
-            logger.warning(f"⚠️ Error during cleanup: {e}")
+            logger.error(f"❌ Unexpected error during startup: {e}")
+            raise
+    else:
+        # API key not configured - start in unconfigured mode
+        logger.warning("⚠️ GELATO_API_KEY not configured")
+        logger.info("💡 Server starting in unconfigured mode")
+        logger.info("💡 Use the configure_gelato tool to set up your API key")
+
+        # Clear any existing client and yield context without connection
+        client_registry.clear_client()
+        yield {
+            "client": None,
+            "settings": settings,
+            "configured": False
+        }
+
+    # Clean up resources on exit
+    try:
+        # Get client from registry for cleanup
+        try:
+            current_client = client_registry.get_client()
+            if current_client:
+                await current_client.close()
+        except RuntimeError:
+            # No client registered, which is fine
+            pass
+        # Clear client registry
+        client_registry.clear_client()
+    except Exception as e:
+        logger.warning(f"⚠️ Error during cleanup: {e}")
 
 
 def create_server() -> FastMCP:
@@ -104,6 +126,7 @@ def create_server() -> FastMCP:
     )
     
     # Register all tools and resources
+    register_config_tools(mcp)
     register_order_tools(mcp)
     register_product_tools(mcp)
     register_shipment_tools(mcp)

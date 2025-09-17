@@ -9,10 +9,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     """Settings for the Gelato MCP server."""
-    
+
     # API Configuration
-    gelato_api_key: str = Field(
-        ..., 
+    gelato_api_key: Optional[str] = Field(
+        default=None,
         description="Gelato API key for authentication"
     )
     gelato_base_url: str = Field(
@@ -73,9 +73,14 @@ class Settings(BaseSettings):
                 "Please set it in your environment or .env file."
             )
 
+    def is_configured(self) -> bool:
+        """Check if the API key is configured."""
+        return bool(self.gelato_api_key and self.gelato_api_key.strip())
 
-def get_settings() -> Settings:
-    """Get validated settings instance."""
+
+def get_settings(validate_api_key: bool = True) -> Settings:
+    """Get settings instance with optional API key validation."""
     settings = Settings.from_env()
-    settings.validate_api_key()
+    if validate_api_key:
+        settings.validate_api_key()
     return settings
